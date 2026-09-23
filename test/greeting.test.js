@@ -45,31 +45,31 @@ test("first name from bare addresses", () => {
 });
 
 test("greeting for one, two, three and many recipients", () => {
-  assert.equal(g.buildGreeting([r("Anne Hansen")]), "Hej Anne");
-  assert.equal(g.buildGreeting([r("Anne Hansen"), r("Peter Holm")]), "Hej Anne og Peter");
-  assert.equal(g.buildGreeting([r("Anne Hansen"), r("Peter Holm"), r("Mette Lund")]), "Hej Anne, Peter og Mette");
-  assert.equal(g.buildGreeting([r("A B"), r("Cc Dd"), r("Ee Ff"), r("Gg Hh")]), "Hej alle");
+  assert.equal(g.buildGreeting([r("Anne Hansen")]), "Hej Anne,");
+  assert.equal(g.buildGreeting([r("Anne Hansen"), r("Peter Holm")]), "Hej Anne og Peter,");
+  assert.equal(g.buildGreeting([r("Anne Hansen"), r("Peter Holm"), r("Mette Lund")]), "Hej Anne, Peter og Mette,");
+  assert.equal(g.buildGreeting([r("A B"), r("Cc Dd"), r("Ee Ff"), r("Gg Hh")]), "Hej alle,");
   assert.equal(g.buildGreeting([]), "");
 });
 
 test("greeting without a usable name", () => {
-  assert.equal(g.buildGreeting([r("info@firma.dk", "info@firma.dk")]), "Hej");
-  assert.equal(g.buildGreeting([r("Anne Hansen"), r("info@firma.dk", "info@firma.dk")]), "Hej alle");
-  assert.equal(g.buildGreeting([r("Salg", "salg@firma.dk", "distributionList")]), "Hej alle");
+  assert.equal(g.buildGreeting([r("info@firma.dk", "info@firma.dk")]), "Hej,");
+  assert.equal(g.buildGreeting([r("Anne Hansen"), r("info@firma.dk", "info@firma.dk")]), "Hej alle,");
+  assert.equal(g.buildGreeting([r("Salg", "salg@firma.dk", "distributionList")]), "Hej alle,");
 });
 
 test("own address is left out of the greeting", () => {
   const me = r("Me Myself", "me@example.com");
   assert.equal(g.buildGreeting([me], "ME@example.com"), "");
-  assert.equal(g.buildGreeting([me, r("Anne Hansen")], "me@example.com"), "Hej Anne");
+  assert.equal(g.buildGreeting([me, r("Anne Hansen")], "me@example.com"), "Hej Anne,");
 });
 
 test("punctuation setting", () => {
-  g.CONFIG.punctuation = ",";
+  g.CONFIG.punctuation = "";
   try {
-    assert.equal(g.buildGreeting([r("Anne Hansen")]), "Hej Anne,");
+    assert.equal(g.buildGreeting([r("Anne Hansen")]), "Hej Anne");
   } finally {
-    g.CONFIG.punctuation = "";
+    g.CONFIG.punctuation = ",";
   }
 });
 
@@ -96,6 +96,17 @@ test("replaces an entity-encoded greeting only at the top", () => {
     "<body><div>Hej Søren og Anne</div><div><br></div><div>Hej Søren igen</div></body>"
   );
   assert.equal(g.replaceGreetingHtml("<body><div>Tak</div><div>Hej Søren</div></body>", "Hej Søren", "x"), null);
+});
+
+test("text the user typed above the signature or quoted mail", () => {
+  const owa = (own) => '<body><div class="elementToProof">' + own + '</div><div id="Signature"><div>Mvh Nis</div></div></body>';
+  assert.equal(g.typedText(owa("<br>")), "");
+  assert.equal(g.typedText(owa("Tak for sidst")), "Tak for sidst");
+  assert.equal(g.typedText('<body><div><br></div><div id="x_Signature">Mvh</div></body>'), "");
+  assert.equal(g.typedText('<body><p class=MsoNormal>&nbsp;</p><a name="_MailAutoSig">Mvh</a></body>'), "");
+  assert.equal(g.typedText('<body><div><br></div><hr><div id="divRplyFwdMsg">Fra: Anne</div></body>'), "");
+  assert.equal(g.typedText("<body><div><br></div></body>"), "");
+  assert.equal(g.typedText("<body><div>Mvh Nis</div></body>"), "Mvh Nis", "unknown signature counts as typed");
 });
 
 test("greeting HTML copies the font of the first paragraph", () => {

@@ -8,13 +8,13 @@
 
 const CONFIG = {
   salutation: "Hej",
-  punctuation: "", // "," gives "Hej Anne,"
+  punctuation: ",", // "" gives "Hej Anne"
   and: "og",
   everyone: "alle",
   maxNames: 3, // more To recipients than this gives "Hej alle"
-  // Waiting lets the compose handler run first on reply and lets the user finish
-  // adding recipients before the body is touched.
-  recipientsDebounceMs: 1000,
+  // On reply, classic Outlook fires both events at once in separate runtimes;
+  // the recipients handler waits so the compose handler inserts first.
+  replyDebounceMs: 1000,
 };
 
 // A first body line starting with one of these is the user's own greeting.
@@ -263,6 +263,18 @@ async function rememberGreeting(item, greeting) {
   if (item.sessionData) await officeCall(item.sessionData, "setAsync", SESSION_KEY, greeting);
 }
 
+// Where the user's own text ends: Outlook's signature or the quoted mail
+// (web and Mac ids, classic Windows bookmark and reply header).
+const SIGNATURE_OR_QUOTE =
+  /id\s*=\s*["']?(?:x_)*(?:Signature|appendonsend|divRplyFwdMsg|mail-editor-reference-message-container)\b|name\s*=\s*["']?_MailAutoSig|border-top:\s*solid\s+#E1E1E1|<hr\b/i;
+
+function typedText(html) {
+  const rest = html.slice(bodyStart(html));
+  const marker = rest.search(SIGNATURE_OR_QUOTE);
+  const own = marker < 0 ? rest : rest.slice(0, rest.lastIndexOf("<", marker));
+  return firstLine(htmlToText(own));
+}
+
 function hasInlineImages(html) {
   return /<img\b[^>]*(?:src\s*=\s*["']?(?:cid:|data:)|AttachmentByCid)/i.test(html);
 }
@@ -274,10 +286,20 @@ function bodyModeOption() {
   return modes ? { bodyMode: modes.HostConfig } : {};
 }
 
-async function applyGreeting(waitMs) {
-  await delay(waitMs);
+async function composeType(item) {
+  if (!item.getComposeTypeAsync) return "newMail";
+  try {
+    return (await officeCall(item, "getComposeTypeAsync")).composeType;
+  } catch (e) {
+    return "newMail";
+  }
+}
+
+async function applyGreeting(fromRecipientsEvent) {
   const mailbox = Office.context.mailbox;
   const item = mailbox.item;
+  const type = await composeType(item);
+  if (fromRecipientsEvent && type === "reply") await delay(CONFIG.replyDebounceMs);
   const to = await officeCall(item.to, "getAsync");
   const greeting = buildGreeting(to, mailbox.userProfile && mailbox.userProfile.emailAddress);
   if (!greeting) return;
@@ -289,8 +311,9 @@ async function applyGreeting(waitMs) {
   const previous = await readPrevious(item);
 
   if (previous && line === previous) {
-    // Rewriting a body loses its inline (attached) images (office-js#6808, #6944).
-    if (previous === greeting || hasInlineImages(body)) return;
+    if (previous === greeting) return;
+    // Rewriting a reply or forward can lose the quoted mail's inline images (office-js#6808, #6944).
+    if (type !== "newMail" && hasInlineImages(body)) return;
     const updated = isHtml
       ? replaceGreetingHtml(body, previous, greeting)
       : replaceGreetingText(body, previous, greeting);
@@ -303,22 +326,25 @@ async function applyGreeting(waitMs) {
   if (startsWithGreeting(line)) return;
 
   const content = isHtml ? greetingHtml(body, greeting) : greeting + "\n\n";
-  await officeCall(item.body, "prependAsync", content, { coercionType });
+  // Before the user has typed anything, inserting at the selection (the top of the body)
+  // leaves the cursor below the greeting; prependAsync leaves it above.
+  const method = isHtml && !typedText(body) ? "setSelectedDataAsync" : "prependAsync";
+  await officeCall(item.body, method, content, { coercionType });
   await rememberGreeting(item, greeting);
 }
 
 // Events can overlap (reply opening, pasting several addresses); run them one at a time.
 let queue = Promise.resolve();
 
-function handleEvent(event, waitMs) {
+function handleEvent(event, fromRecipientsEvent) {
   queue = queue
-    .then(() => applyGreeting(waitMs))
+    .then(() => applyGreeting(fromRecipientsEvent))
     .catch((error) => console.error("Hej-hilsen: " + JSON.stringify(error)))
     .then(() => event.completed());
 }
 
 function onNewMessageComposeHandler(event) {
-  handleEvent(event, 0);
+  handleEvent(event, false);
 }
 
 function onMessageRecipientsChangedHandler(event) {
@@ -326,7 +352,7 @@ function onMessageRecipientsChangedHandler(event) {
     event.completed();
     return;
   }
-  handleEvent(event, CONFIG.recipientsDebounceMs);
+  handleEvent(event, true);
 }
 
 if (typeof Office !== "undefined" && Office.actions) {
@@ -345,6 +371,7 @@ if (typeof module !== "undefined") {
     replaceGreetingHtml,
     replaceGreetingText,
     greetingHtml,
+    typedText,
     onNewMessageComposeHandler,
     onMessageRecipientsChangedHandler,
   };
