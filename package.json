@@ -1,6 +1,6 @@
 {
   "name": "outlook-hej",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Outlook add-in that writes \"Hej <fornavn>\" at the top of new mails",
   "scripts": {

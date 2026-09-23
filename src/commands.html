@@ -5,7 +5,8 @@
   <title>Hej-hilsen</title>
   <!-- Runtime page for Outlook on the web, new Outlook on Windows and Outlook on Mac. -->
   <script src="https://officeapis.public.onecdn.static.microsoft/1/office.js"></script>
-  <script src="launchevent.js?v={{VERSION}}"></script>
+  <!-- Timestamped so a new launchevent.js is used right away despite GitHub Pages' 10-minute cache. -->
+  <script>document.write('<script src="launchevent.js?t=' + Date.now() + '"><\/script>');</script>
   <!-- Initializes Office.js in the browser runtime; classic Windows skips this page. -->
   <script>Office.onReady();</script>
 </head>

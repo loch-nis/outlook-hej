@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const g = require("../src/launchevent.js");
 
 g.CONFIG.replyDebounceMs = 30;
+g.CONFIG.callTimeoutMs = 50;
+g.CONFIG.debug = false;
 
 // A second copy of the script, like classic Outlook starting a fresh runtime per event.
 function freshRuntime() {
@@ -228,6 +230,19 @@ test("an Outlook error still completes the event", async () => {
   }
   assert.equal(state.writes, 0);
   assert.deepEqual(state.notices, ["Hej-hilsen: getTypeAsync: 5001"]);
+});
+
+test("an Outlook call that never answers still completes the event", async () => {
+  const state = fakeOutlook({ to: [ANNE] });
+  Office.context.mailbox.item.getComposeTypeAsync = () => {};
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await toChanged();
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(state.notices, ["Hej-hilsen: getComposeTypeAsync: no answer from Outlook"]);
 });
 
 test("falls back to prependAsync when inserting at the selection fails", async () => {

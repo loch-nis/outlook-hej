@@ -15,6 +15,8 @@ const CONFIG = {
   // On reply, classic Outlook fires both events at once in separate runtimes;
   // the recipients handler waits so the compose handler inserts first.
   replyDebounceMs: 1000,
+  callTimeoutMs: 10000,
+  debug: true, // shows what each event did in a notice bar
 };
 
 // A first body line starting with one of these is the user's own greeting.
@@ -237,25 +239,38 @@ function greetingHtml(html, greeting) {
 
 // ---------- Outlook ----------
 
+// Rejects instead of hanging when Outlook never calls back, so the event still completes.
 function officeCall(target, method, ...args) {
   return new Promise((resolve, reject) => {
+    const timer = typeof setTimeout === "function"
+      ? setTimeout(() => reject(new Error(method + ": no answer from Outlook")), CONFIG.callTimeoutMs)
+      : null;
     target[method](...args, (result) => {
+      if (timer) clearTimeout(timer);
       if (result.status === Office.AsyncResultStatus.Succeeded) resolve(result.value);
       else reject(new Error(method + ": " + (result.error && (result.error.message || result.error.code))));
     });
   });
 }
 
-// Shows failures in the compose window; event runtimes have no console the user can see.
-function showProblem(error) {
+// Shows text in the compose window; event runtimes have no console the user can see.
+function showNotice(key, text) {
   const item = Office.context.mailbox.item;
   if (!item || !item.notificationMessages) return;
-  item.notificationMessages.replaceAsync("hejHilsenProblem", {
+  item.notificationMessages.replaceAsync(key, {
     type: "informationalMessage",
-    message: ("Hej-hilsen: " + (error && error.message ? error.message : String(error))).slice(0, 150),
+    message: ("Hej-hilsen: " + text).slice(0, 150),
     icon: "Icon.16x16",
     persistent: false,
   });
+}
+
+function showProblem(error) {
+  showNotice("hejHilsenProblem", error && error.message ? error.message : String(error));
+}
+
+function trace(text) {
+  if (CONFIG.debug) showNotice("hejHilsenDebug", text);
 }
 
 function delay(ms) {
@@ -314,7 +329,7 @@ async function applyGreeting(fromRecipientsEvent) {
   if (fromRecipientsEvent && type === "reply") await delay(CONFIG.replyDebounceMs);
   const to = await officeCall(item.to, "getAsync");
   const greeting = buildGreeting(to, mailbox.userProfile && mailbox.userProfile.emailAddress);
-  if (!greeting) return;
+  if (!greeting) return "no To recipients";
 
   const isHtml = (await officeCall(item.body, "getTypeAsync")) === Office.CoercionType.Html;
   const coercionType = isHtml ? Office.CoercionType.Html : Office.CoercionType.Text;
@@ -323,42 +338,49 @@ async function applyGreeting(fromRecipientsEvent) {
   const previous = await readPrevious(item);
 
   if (previous && line === previous) {
-    if (previous === greeting) return;
+    if (previous === greeting) return "unchanged";
     // Rewriting a reply or forward can lose the quoted mail's inline images (office-js#6808, #6944).
-    if (type !== "newMail" && hasInlineImages(body)) return;
+    if (type !== "newMail" && hasInlineImages(body)) return "kept (quoted inline images)";
     const updated = isHtml
       ? replaceGreetingHtml(body, previous, greeting)
       : replaceGreetingText(body, previous, greeting);
-    if (updated === null) return;
+    if (updated === null) return "greeting not found";
     await officeCall(item.body, "setAsync", updated, Object.assign({ coercionType }, bodyModeOption()));
     await rememberGreeting(item, greeting);
-    return;
+    return "updated to " + greeting;
   }
   // The user wrote or edited a greeting; leave the body alone from here on.
-  if (startsWithGreeting(line)) return;
+  if (startsWithGreeting(line)) return "left the user's greeting alone";
 
   const content = isHtml ? greetingHtml(body, greeting) : greeting + "\n\n";
   // Before the user has typed anything, inserting at the selection (the top of the body)
   // leaves the cursor below the greeting; prependAsync leaves it above.
-  let inserted = false;
+  let method = "";
   if (isHtml && !typedText(body)) {
     try {
       await officeCall(item.body, "setSelectedDataAsync", content, { coercionType });
-      inserted = true;
+      method = "setSelectedDataAsync";
     } catch (error) {
       console.error("Hej-hilsen: " + error.message);
     }
   }
-  if (!inserted) await officeCall(item.body, "prependAsync", content, { coercionType });
+  if (!method) {
+    await officeCall(item.body, "prependAsync", content, { coercionType });
+    method = "prependAsync";
+  }
   await rememberGreeting(item, greeting);
+  return "inserted " + greeting + " (" + type + ", " + method + ")";
 }
 
 // Events can overlap (reply opening, pasting several addresses); run them one at a time.
 let queue = Promise.resolve();
 
 function handleEvent(event, fromRecipientsEvent) {
+  const name = fromRecipientsEvent ? "recipients changed" : "compose";
+  trace(name + ": started");
   queue = queue
     .then(() => applyGreeting(fromRecipientsEvent))
+    .then((outcome) => trace(name + ": " + outcome))
     .catch((error) => {
       console.error("Hej-hilsen: " + (error && error.message));
       showProblem(error);
