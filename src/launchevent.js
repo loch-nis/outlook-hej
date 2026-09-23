@@ -16,7 +16,7 @@ const CONFIG = {
   // the recipients handler waits so the compose handler inserts first.
   replyDebounceMs: 1000,
   callTimeoutMs: 10000,
-  debug: true, // shows what each event did in a notice bar
+  debug: false, // true shows what each event did in a notice bar
 };
 
 // A first body line starting with one of these is the user's own greeting.

@@ -51,13 +51,15 @@ Microsoft 365 admin center → Settings → Integrated apps → Upload custom ap
 
 ## Updating
 
-Changes to `src/` only: bump `version` in `package.json` and push. Outlook picks up the new script within about 10 minutes (GitHub Pages cache), or on restart for classic Windows. No reinstall.
+Changes to `src/launchevent.js` only: push. Outlook on the web, new Outlook and Mac load the new script on the next compose, because `commands.html` requests it with a timestamp that skips the GitHub Pages cache. Classic Windows picks it up on restart. No reinstall.
 
-Changes to the manifest template: push, then remove and re-add the add-in (or Update it in the admin center, which asks for consent again).
+Changes to the manifest template or `commands.html`: bump `version` in `package.json`, push, then remove and re-add the add-in (or Update it in the admin center, which asks for consent again).
+
+Set `debug: true` in `CONFIG` to show what each event did in a notice bar above the mail.
 
 ## How it edits the body
 
-- The first greeting goes in at the top of the body. If nothing is typed above the signature or quoted mail yet, it uses `setSelectedDataAsync`, which leaves the cursor below the greeting; otherwise `prependAsync`, which never touches the user's text.
+- The first greeting goes in at the top of the body. If nothing is typed above the signature or quoted mail yet, it gives the body focus with an empty `prependAsync`, inserts with `setSelectedDataAsync`, and reads the body back. Outlook on the web reports success for `setSelectedDataAsync` but inserts nothing when the body never had focus, so if the greeting isn't there it falls back to `prependAsync`. Text the user already typed is always handled with `prependAsync`, which never touches it.
 - Updating it (Anne → Anne og Peter) means rewriting the body with `setAsync`. On replies and forwards that is skipped when the body holds attached inline images, because Outlook can drop the quoted mail's images ([office-js#6808](https://github.com/OfficeDev/office-js/issues/6808), [#6944](https://github.com/OfficeDev/office-js/issues/6944)). New mails are updated even with an inline signature logo.
 - On reply, the recipients handler waits 1 second so the compose handler (which classic Outlook runs in a separate runtime at the same moment) inserts first.
 - The add-in finds its greeting by text and remembers it in `sessionData`. It does not tag it with an id or class, because Outlook rewrites those ([office-js#5296](https://github.com/OfficeDev/office-js/issues/5296)).
@@ -65,6 +67,7 @@ Changes to the manifest template: push, then remove and re-add the add-in (or Up
 ## Limits
 
 - In Outlook on the web, writing the greeting moves focus from the To field to the body. Click back in To to add more recipients.
+- In Outlook on the web the cursor stays at the start of the body, before the greeting. Click below the greeting to start writing. No Office.js API moves the cursor.
 - After an update (Anne → Anne og Peter), Outlook on the web puts the cursor at the end of the body.
 - On Mac the cursor disappears after the greeting is inserted; click in the body to continue (documented Outlook behaviour).
 - Closing an untouched reply asks whether to save it, because the greeting counts as an edit.
