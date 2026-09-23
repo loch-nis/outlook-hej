@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+# build output, deployed by .github/workflows/pages.yml
+docs/
+manifest.xml
