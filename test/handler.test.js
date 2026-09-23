@@ -39,7 +39,7 @@ function fakeOutlook({
   sessionData = true,
   bodyMode = false,
 } = {}) {
-  const state = { to, body, type, session: {}, writes: 0, options: [], methods: [] };
+  const state = { to, body, type, session: {}, writes: 0, options: [], methods: [], notices: [] };
   const ok = (cb, value) => cb({ status: "succeeded", value });
   const last = (args) => args[args.length - 1];
   const stored = (html) => (encode ? html.replace(/ø/g, "&oslash;").replace(/Ø/g, "&Oslash;") : html);
@@ -57,6 +57,7 @@ function fakeOutlook({
   };
   const item = {
     getComposeTypeAsync: (cb) => ok(cb, { composeType, coercionType: type }),
+    notificationMessages: { replaceAsync: (key, message) => state.notices.push(message.message) },
     to: { getAsync: (cb) => ok(cb, state.to) },
     body: {
       getTypeAsync: (cb) => ok(cb, state.type),
@@ -226,6 +227,22 @@ test("an Outlook error still completes the event", async () => {
     console.error = original;
   }
   assert.equal(state.writes, 0);
+  assert.deepEqual(state.notices, ["Hej-hilsen: getTypeAsync: 5001"]);
+});
+
+test("falls back to prependAsync when inserting at the selection fails", async () => {
+  const state = fakeOutlook({ to: [ANNE] });
+  Office.context.mailbox.item.body.setSelectedDataAsync = (data, options, cb) =>
+    cb({ status: "failed", error: { code: 5000, message: "not supported" } });
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await toChanged();
+  } finally {
+    console.error = original;
+  }
+  assert.equal(top(state), "Hej Anne,");
+  assert.deepEqual(state.methods, ["prependAsync"]);
 });
 
 const CID_LOGO = '<img src="cid:logo.png" data-imagetype="AttachmentByCid">';

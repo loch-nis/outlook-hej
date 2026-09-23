@@ -241,8 +241,20 @@ function officeCall(target, method, ...args) {
   return new Promise((resolve, reject) => {
     target[method](...args, (result) => {
       if (result.status === Office.AsyncResultStatus.Succeeded) resolve(result.value);
-      else reject(result.error);
+      else reject(new Error(method + ": " + (result.error && (result.error.message || result.error.code))));
     });
+  });
+}
+
+// Shows failures in the compose window; event runtimes have no console the user can see.
+function showProblem(error) {
+  const item = Office.context.mailbox.item;
+  if (!item || !item.notificationMessages) return;
+  item.notificationMessages.replaceAsync("hejHilsenProblem", {
+    type: "informationalMessage",
+    message: ("Hej-hilsen: " + (error && error.message ? error.message : String(error))).slice(0, 150),
+    icon: "Icon.16x16",
+    persistent: false,
   });
 }
 
@@ -328,8 +340,16 @@ async function applyGreeting(fromRecipientsEvent) {
   const content = isHtml ? greetingHtml(body, greeting) : greeting + "\n\n";
   // Before the user has typed anything, inserting at the selection (the top of the body)
   // leaves the cursor below the greeting; prependAsync leaves it above.
-  const method = isHtml && !typedText(body) ? "setSelectedDataAsync" : "prependAsync";
-  await officeCall(item.body, method, content, { coercionType });
+  let inserted = false;
+  if (isHtml && !typedText(body)) {
+    try {
+      await officeCall(item.body, "setSelectedDataAsync", content, { coercionType });
+      inserted = true;
+    } catch (error) {
+      console.error("Hej-hilsen: " + error.message);
+    }
+  }
+  if (!inserted) await officeCall(item.body, "prependAsync", content, { coercionType });
   await rememberGreeting(item, greeting);
 }
 
@@ -339,7 +359,10 @@ let queue = Promise.resolve();
 function handleEvent(event, fromRecipientsEvent) {
   queue = queue
     .then(() => applyGreeting(fromRecipientsEvent))
-    .catch((error) => console.error("Hej-hilsen: " + JSON.stringify(error)))
+    .catch((error) => {
+      console.error("Hej-hilsen: " + (error && error.message));
+      showProblem(error);
+    })
     .then(() => event.completed());
 }
 
