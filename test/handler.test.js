@@ -234,7 +234,7 @@ test("an Outlook error still completes the event", async () => {
 
 test("an Outlook call that never answers still completes the event", async () => {
   const state = fakeOutlook({ to: [ANNE] });
-  Office.context.mailbox.item.getComposeTypeAsync = () => {};
+  Office.context.mailbox.item.to.getAsync = () => {};
   const original = console.error;
   console.error = () => {};
   try {
@@ -242,7 +242,7 @@ test("an Outlook call that never answers still completes the event", async () =>
   } finally {
     console.error = original;
   }
-  assert.deepEqual(state.notices, ["Hej-hilsen: getComposeTypeAsync: no answer from Outlook"]);
+  assert.deepEqual(state.notices, ["Hej-hilsen: getAsync: no answer from Outlook"]);
 });
 
 test("falls back to prependAsync when inserting at the selection fails", async () => {
