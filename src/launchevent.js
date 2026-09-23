@@ -358,8 +358,12 @@ async function applyGreeting(fromRecipientsEvent) {
   let method = "";
   if (isHtml && !typedText(body)) {
     try {
+      // An empty prepend gives the body focus; without it Outlook on the web
+      // reports success for setSelectedDataAsync but inserts nothing.
+      await officeCall(item.body, "prependAsync", "", { coercionType });
       await officeCall(item.body, "setSelectedDataAsync", content, { coercionType });
-      method = "setSelectedDataAsync";
+      const check = await officeCall(item.body, "getAsync", coercionType, bodyModeOption());
+      if (firstLine(htmlToText(check)) === greeting) method = "setSelectedDataAsync";
     } catch (error) {
       console.error("Hej-hilsen: " + error.message);
     }

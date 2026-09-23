@@ -40,13 +40,16 @@ function fakeOutlook({
   encode = false,
   sessionData = true,
   bodyMode = false,
+  selectionWorks = true,
 } = {}) {
   const state = { to, body, type, session: {}, writes: 0, options: [], methods: [], notices: [] };
   const ok = (cb, value) => cb({ status: "succeeded", value });
   const last = (args) => args[args.length - 1];
   const stored = (html) => (encode ? html.replace(/ø/g, "&oslash;").replace(/Ø/g, "&Oslash;") : html);
   // With no cursor in the body, both methods insert at the top.
+  // An empty insert only moves focus; Outlook on the web can ignore setSelectedDataAsync.
   const insertAtTop = (method) => (data, options, cb) => {
+    if (data === "" || (method === "setSelectedDataAsync" && !selectionWorks)) return ok(cb);
     state.writes++;
     state.methods.push(method);
     const at = state.type === "html" ? state.body.search(/<body[^>]*>/i) : -1;
@@ -243,6 +246,13 @@ test("an Outlook call that never answers still completes the event", async () =>
     console.error = original;
   }
   assert.deepEqual(state.notices, ["Hej-hilsen: getAsync: no answer from Outlook"]);
+});
+
+test("falls back to prependAsync when Outlook ignores the selection insert", async () => {
+  const state = fakeOutlook({ to: [ANNE], selectionWorks: false });
+  await toChanged();
+  assert.equal(top(state), "Hej Anne,");
+  assert.deepEqual(state.methods, ["prependAsync"]);
 });
 
 test("falls back to prependAsync when inserting at the selection fails", async () => {
